@@ -1,26 +1,14 @@
 # Start from this image on https://hub.docker.com (the public docker repo)
 # This gives us a known starting point to configure from for each build
-FROM node:12-alpine
+FROM amazoncorretto:11-alpine-jdk
 
-# Let docker know that our app is listening on port 3000 when it runs
-EXPOSE 3000
+# Let docker know that our app is listening on port 10025 when it runs
+EXPOSE 10025
 
-# This just sets the current directory so we don't have to put '/app' everywhere
-WORKDIR /app
+ADD target/*-jar-with-dependencies.jar /usr/share/aws-smtp-relay/aws-smtp-relay.jar
 
-# Environment variables
-ENV ISDOCKER=TRUE
-
-COPY package*.json ./
-
-# copy these files from our local workspace into the container (they will end up in /app)
-COPY server ./server
-
-WORKDIR /app/server
-
-# Run our test cases, if any fail this will fail the docker build command (non-zero exit code)
-# RUN npm test
-
-# set the startup command to npm start so when our container runs we start up the server
-# this is way easier then configuring some sort of system daemon
-CMD [ "npm", "start" ]
+ENTRYPOINT ["/usr/bin/java", "-jar",
+            "/usr/share/aws-smtp-relay/aws-smtp-relay.jar", "-b", "0.0.0.0",
+                                                            "-al", "EmailServerAuthenticationLambdaFunction",
+                                                             "--region", "us-east-1",
+                                                              "--sourceArn", "arn:aws:ses:us-east-1:079714096672:identity/development.cloud.powerside.com"]

@@ -18,44 +18,18 @@ phases:
       # Available Environment Variables:
       #  https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
       - printenv | sort
-
-      # Check what versions of node and npm we have
-      - node -v
-      - npm -v
-
-      # Record the path to the webservices sources which is the current location by default.
-      - WEBSERVICES_SOURCE_CODE=`pwd`
-      - echo $WEBSERVICES_SOURCE_CODE
-
-#      # This `npm ci` needs to be run here, so the node_modules/ folder can be copied into the Dockerfile.
-#      - cd $WEBSERVICES_SOURCE_CODE/server
-#      - npm ci --only=production
+      - apt-get update -y
+      - apt-get install -y maven
 
   pre_build:
     commands:
       - export RELEASE_IMAGE_URL="$DOCKER_IMAGE_URL:$CODEBUILD_RESOLVED_SOURCE_VERSION"
 
+      # login docker hub account
+      - docker login -u "${DOCKER_HUB_ID}" -p "${DOCKER_HUB_PASSWORD}"
+
   build:
     commands:
-#      # Copy the correct serverConfiguration file, depending on the DEVELOPMENT_STAGE
-#      - cp $WEBSERVICES_SOURCE_CODE/server/serverConfiguration-${DEVELOPMENT_STAGE}.json $WEBSERVICES_SOURCE_CODE/server/serverConfiguration.json
-#      - sed -i "s|\(\"region\":[ ]*\"[a-zA-Z0-9\.\/:]*\"\)|\"region\":\ \"$AWS_REGION\"|g" $WEBSERVICES_SOURCE_CODE/server/serverConfiguration.json
-#      - sed -i "s|\(\"codeBucket\":[ ]*\"[a-zA-Z0-9\.\/:]*\"\)|\"codeBucket\":\ \"${CODE_BUCKET}\"|g" $WEBSERVICES_SOURCE_CODE/server/serverConfiguration.json
-#      - sed -i "s|\(\"dataBucket\":[ ]*\"[a-zA-Z0-9\.\/:]*\"\)|\"dataBucket\":\ \"${DATA_BUCKET}\"|g" $WEBSERVICES_SOURCE_CODE/server/serverConfiguration.json
-#
-#      # Copy the correct serverConfiguration file, depending on the DEVELOPMENT_STAGE
-#      - cp $WEBSERVICES_SOURCE_CODE/server/robots-${DEVELOPMENT_STAGE}.txt $WEBSERVICES_SOURCE_CODE/server/robots.txt
-#
-#      #
-#      # Run the rX_to_rY files. This tool has only been tested when run in its own directory.
-#      #
-#      - cd $WEBSERVICES_SOURCE_CODE/tools/DbUpgrade
-#      - npm ci
-#      - node dbUpgrade.js --region $AWS_REGION --database fcadspt_transactional --secretId rds-cluster-admin-access --historyTables --excludeTables ./excludeHistoryTableList
-#      - cd $WEBSERVICES_SOURCE_CODE
-#
-#      - sed -i "s|CODEBUILD_RESOLVED_SOURCE_VERSION|$CODEBUILD_RESOLVED_SOURCE_VERSION|g" $CODEBUILD_SRC_DIR/server/server.js
-#
       # Obtain the VPC dynamically. Assume there is only one VPC.
       - VPC_ID=$(aws ec2 describe-vpcs | jq '.Vpcs[0].VpcId' | tr -d '\n' | sed -e 's/"//g')
       - echo ${VPC_ID}
@@ -78,31 +52,14 @@ phases:
 
       - cat aws/parameters/cloudformation.parameters.${DEVELOPMENT_STAGE}.json
 
-#      # Build RunOncePerDay lambda
-#      - cd $WEBSERVICES_SOURCE_CODE/lambdas/RunOncePerDayLambdaFunction/
-#        # Pass runtime details to the client application via the configuration.json file.
-#      - sed -i "s|\(\"region\":[ ]*\"[a-zA-Z0-9\.\/:]*\"\)|\"region\":\ \"$AWS_REGION\"|g" configuration.json
-#      - cat configuration.json
-#      - npm ci --only=production
-#      - zip -r --quiet RunOncePerDayLambdaFunction.zip . && aws s3 cp RunOncePerDayLambdaFunction.zip s3://$CODE_BUCKET/lambdas/dsRunOncePerDayLambdaFunction${CODEBUILD_RESOLVED_SOURCE_VERSION}.zip
-#
-#      # Copy email documents to S3 Code bucket.
-#      - aws s3 sync ${CODEBUILD_SRC_DIR}/server/resources/communication/documents s3://${CODE_BUCKET}/documents/email
-#
-#      # Copy over any CloudFormation includes:
-#      - aws s3 sync ${CODEBUILD_SRC_DIR}/aws/cloudFormationIncludes     s3://${CODE_BUCKET}/cloudFormationIncludes/
-#
-#      # TODO: Clear the CDN cache when production to be sure else updates infrequent.
-
-      # login docker hub account
-      - docker login -u "${DOCKER_HUB_ID}" -p "${DOCKER_HUB_PASSWORD}"
       # Build the docker image.
       - cd $CODEBUILD_SRC_DIR
+      - mvn clean compile assembly:single -Pquickrun
       - docker build --tag "$RELEASE_IMAGE_URL" --file ./Dockerfile .
 
       # Login to the ECR Container Registry and push up the image.
       - $(aws ecr get-login --no-include-email)
-      - docker push "$RELEASE_IMAGE_URL"
+      - docker push --all-tags "$DOCKER_IMAGE_URL"
 
 artifacts:
   discard-paths: yes

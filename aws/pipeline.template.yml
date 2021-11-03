@@ -144,7 +144,7 @@ Resources:
             MaxAge: 3000
 
   # This resource sets up the build. In general, all it does is run arbitrary shell commands inside of a docker container.
-  BuildServerProject:
+  SmtpRelayProject:
     Type: AWS::CodeBuild::Project
     Properties:
       # This is the role that the build will execute as. If your build needs to pull artifacts from, S3 or reach out
@@ -187,7 +187,7 @@ Resources:
     # This is the "Pipeline" that controls the order of execution.
     Type: AWS::CodePipeline::Pipeline
     DependsOn:
-      - BuildServerProject
+      - SmtpRelayProject
     Properties:
       ArtifactStore:
         Type: S3
@@ -224,7 +224,7 @@ Resources:
               InputArtifacts:
                 - Name: sourceCode
               Configuration:
-                ProjectName: !Ref BuildServerProject
+                ProjectName: !Ref SmtpRelayProject
                 PrimarySource: sourceCode
               OutputArtifacts:
                 - Name: buildResults

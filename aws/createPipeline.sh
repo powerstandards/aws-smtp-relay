@@ -15,13 +15,13 @@ if [ $STAGE = '-h' ] || [ $STAGE = '--help' ] ; then
 	exit 1;
 fi
 
-PROJECT_NAME=emailServer
+PROJECT_NAME=aws-smtp-relay
 PROJECT_NAME_LOWER_CASE=$(echo ${PROJECT_NAME} | tr '[:upper:]' '[:lower:]')
 APEX_DOMAIN='powerside.com'
 # Make sure ENTITY_NAME is lowercase!
 ENTITY_NAME='insite'
 REPO_OWNER=powerstandards
-REPO_TOKEN='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'
+REPO_TOKEN='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'
 
 # How to handle updates which are not recognized as changes. Lists types of changes not recognized.
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/troubleshooting.html

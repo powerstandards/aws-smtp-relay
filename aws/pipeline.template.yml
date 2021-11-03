@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Decision Support Webservice pipeline
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: The name of the stack.
+  ProjectNameLowerCase:
+    Type: String
+    Description: Used for S3 bucket names. Easier to do in bash than CloudFront.
+  EntityName:
+    Type: String
+    Description: The name of the Company or Entity. Should be all lowercase.
+  DevelopmentStage:
+    Type: String
+    AllowedValues:
+      - development
+      - staging
+      - production
+      - demonstration
+    Description: Usually development, demonstration, staging, or production.
+  RepoProvider:
+    Type: String
+    Default: GitHub
+    Description: Controls how the connection is made.
+  RepoOwner:
+    Type: String
+    Description: The owner part of owner/project part of a source code repository.
+  RepoProject:
+    Type: String
+    Description: The project part of owner/project part of a source code repository.
+  RepoBranch:
+    Type: String
+    Description: The branch of a source code repository.
+  RepoToken:
+    Type: String
+    NoEcho: true
+    Description: OAuth Token for the github repository.
+  ApexDomain:
+    Type: String
+    Description: Domain name.
+  Subdomain:
+    Type: String
+    Description: Subdomain to deploy this app to.
+
+Conditions:
+  IsProduction: !Equals [ !Ref "DevelopmentStage", "production" ]
+
+Resources:
+  ArtifactStorage:
+    Type: AWS::S3::Bucket
+    # Example how to get stack to update if a chane not detected by cloudformation deploy.
+    # Metadata: {"force": Forcing stack to update."}
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: codebuild.amazonaws.com
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: codepipeline.amazonaws.com
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: cloudformation.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  DockerRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryPolicyText:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowPushPull
+            Effect: Allow
+            Action:
+              - 'ecr:*'
+            Principal:
+              AWS:
+                - !GetAtt PipelineRole.Arn
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Limit the number of images retained.",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectNameLowerCase}-${DevelopmentStage}-${EntityName}-data"
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - HEAD
+            MaxAge: 3000
+
+  CodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectNameLowerCase}-${DevelopmentStage}-${EntityName}-code"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - HEAD
+            MaxAge: 3000
+
+  # This resource sets up the build. In general, all it does is run arbitrary shell commands inside of a docker container.
+  BuildServerProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      # This is the role that the build will execute as. If your build needs to pull artifacts from, S3 or reach out
+      #  of its container for any reason, make sure this role has the permissions to do so.
+      ServiceRole: !GetAtt PipelineRole.Arn
+      Source:
+        # Where the sourcecode will come from. (This special keyword says that CodePipeline will provide it.)
+        Type: CODEPIPELINE
+        BuildSpec: aws/buildspec.yml
+      Environment:
+        # This specifies the docker image and how much resources to give it to run the build.
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:2.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: DOCKER_IMAGE_URL
+            Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DockerRepo}'
+          - Name: DEVELOPMENT_STAGE
+            Value: !Ref DevelopmentStage
+          - Name: ENTITY_NAME
+            Value: !Ref EntityName
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: PROJECT_NAME_LOWER_CASE
+            Value: !Ref ProjectNameLowerCase
+          - Name: DATA_BUCKET
+            Value: !Select [0, !Split [".", !GetAtt DataBucket.DomainName]]
+          - Name: CODE_BUCKET
+            Value: !Select [0, !Split [".", !GetAtt CodeBucket.DomainName]]
+          - Name: APEX_DOMAIN
+            Value: !Ref ApexDomain
+          - Name: SUBDOMAIN
+            Value: !Ref Subdomain
+      Artifacts:
+        # Send any output back to code pipeline.
+        Type: CODEPIPELINE
+
+  Pipeline:
+    # This is the "Pipeline" that controls the order of execution.
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn:
+      - BuildServerProject
+    Properties:
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactStorage
+      RoleArn: !GetAtt PipelineRole.Arn
+      RestartExecutionOnUpdate: true
+      Stages:
+        # The first step triggers with changes in Github.
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Provider: GitHub
+                Owner: ThirdParty
+                Version: 1
+              OutputArtifacts:
+                - Name: sourceCode
+              Configuration:
+                Owner: !Ref RepoOwner
+                Repo: !Ref RepoProject
+                Branch: !Ref RepoBranch
+                OAuthToken: !Ref RepoToken
+
+        # Step two is to build the project using the CodeBuild project above.
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              InputArtifacts:
+                - Name: sourceCode
+              Configuration:
+                ProjectName: !Ref BuildServerProject
+                PrimarySource: sourceCode
+              OutputArtifacts:
+                - Name: buildResults
+
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              RoleArn: !GetAtt PipelineRole.Arn
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: buildResults
+              Configuration:
+                StackName: !Join [ "-", [ !Ref "ProjectName", !Ref "DevelopmentStage" ] ]
+                TemplatePath: buildResults::cloudformation.template.yml
+                ActionMode: CREATE_UPDATE
+                TemplateConfiguration: !Join [ "", [ "buildResults::", "cloudformation.parameters.", !Ref "DevelopmentStage", ".json" ] ]
+                RoleArn: !GetAtt PipelineRole.Arn
+                Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND

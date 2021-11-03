@@ -1,0 +1,16 @@
+{
+  "Parameters": {
+    "EntityName": "ENTITY_NAME",
+    "ProjectName": "PROJECT_NAME",
+    "DevelopmentStage": "DEVELOPMENT_STAGE",
+    "Image": "RELEASE_IMAGE_URL",
+    "Subdomain": "SUBDOMAIN",
+    "ApexDomain": "APEX_DOMAIN",
+    "DataBucket": "DATA_BUCKET",
+    "CodeBucket": "CODE_BUCKET",
+    "VpcId": "VPC_ID",
+    "SubnetIds": "SUBNET_IDS",
+    "HTTPSCertificateArn": "arn:aws:acm:us-west-2:285030848695:certificate/663749dd-20eb-4a5b-b6fc-51338f0db78d",
+    "CodeBuildResolvedSourceVersion": "CODEBUILD_RESOLVED_SOURCE_VERSION"
+  }
+}

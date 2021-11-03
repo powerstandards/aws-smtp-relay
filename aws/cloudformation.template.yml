@@ -1,0 +1,560 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Generic CloudFormation Template
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Shorthand name for the project to show in the console and logs.
+  EntityName:
+    Type: String
+    Description: The name of the Company or Entity. Should be all lowercase.
+  DevelopmentStage:
+    Type: String
+    AllowedValues:
+      - development
+      - staging
+      - production
+      - demonstration
+    Description: Usually development, demonstration, staging, or production.
+  Image:
+    Type: String
+    Description: Docker image to run.
+  ApexDomain:
+    Type: String
+    Description: Domain name to place this application under as a subdomain.
+  Subdomain:
+    Type: String
+    Description: Subdomain to deploy this app to.
+  DataBucket:
+    Type: String
+    Description: Bucket for client data.
+  CodeBucket:
+    Type: String
+    Description: Bucket for lambda code.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Id of the VPC.
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of subnet Ids to run in. Comma seperated string.
+    # The first 6 subnets are one per Availability Zone (AZ).
+    # SubnetId[0] - Assigned to AWS::EC2::NatGateway and to the LoadBalancer to the ECS Cluster.
+    # SubnetId[0..3] - Assigned to AWS::ElasticLoadBalancingV2::LoadBalancer.
+    # SubnetId[4] - Assigned to AWS::EC2::SubnetRouteTableAssociation for Lambda's to access internal resoures including the RDS DB.
+    # SubnetId[5] - Slated to be assigned to AWS::EC2::SubnetRouteTableAssociation for redundancy.
+    # VPN put into its own subnet to prevent conflict.
+  HTTPSCertificateArn:
+    Type: String
+    Description: AWS Certificate ARN.
+  CodeBuildResolvedSourceVersion:
+    Type: String
+    Description: Unique ID per build from this pipeline.
+
+Conditions:
+  IsProduction: !Equals [ !Ref "DevelopmentStage", "production" ]
+
+Resources:
+
+  #
+  # Networking
+  #
+
+  # A private subnet for use by Lambda functions which provides access to the Internet and internal resources incucluding Aurora DB.
+  LambdaSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: VpcId
+      CidrBlock: 172.31.128.0/20
+      Tags:
+        - Key: Name
+          Value: Decision Support LambdaSubnet
+
+  # A private route table for use by Lambda functions.
+  LambdaRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VpcId
+      Tags:
+        - Key: Name
+          Value: Decision Support LambdaRouteTable
+
+  LambdaNAT:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - LambdaEIP
+          - AllocationId
+      # This subnetId must be publicly accessible. Always use the first subnetId.
+      SubnetId: !Select [ 0, !Ref SubnetIds ]
+      Tags:
+        - Key: Name
+          Value: Decision Support LambdaNAT
+
+  LambdaEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: Decision Support LambdaNAT
+
+  LambdaRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: LambdaRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: LambdaNAT
+
+  LambdaRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: LambdaSubnet
+      RouteTableId:
+        Ref: LambdaRouteTable
+
+  # This RouteTable is for the Lambdas to have access to S3 buckets when inside VPC.
+  S3EndpointRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: Route Table for S3 Endpoint in VPC
+
+  # This Endpoint is for the Lambdas to have access to S3 buckets when inside VPC.
+  # TODO: Dial down the access from all actions on all resources, to Get and Put on our data bucket
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - '*'
+            Resource:
+              - '*'
+      RouteTableIds:
+        - !Ref S3EndpointRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref VpcId
+
+  S3SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Select [ 2, !Ref SubnetIds ]
+      RouteTableId:
+        Ref: S3EndpointRouteTable
+
+  #
+  # ECS Cluster
+  #
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties: {}
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+
+  TaskPolicy:
+    # Allow our container to only access the AWS resources it needs.
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-TaskPolicy'
+      Roles:
+        - !Ref TaskRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          # Allow the task to forward to Cloudwatch logs. (Anything we send to stdout or stderr will go there.)
+          - Effect: Allow
+            Action:
+              - logs:*
+            Resource: !GetAtt LogGroup.Arn
+          # Allow access to ECS Secrets Manager.
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Join [ ":", ["arn:aws:secretsmanager", !Ref "AWS::Region", !Ref "AWS::AccountId", "secret", "appUser-??????"]]
+              - !Join [ ":", ["arn:aws:secretsmanager", !Ref "AWS::Region", !Ref "AWS::AccountId", "secret", "appDBUser-??????"]]
+              - !Join [ ":", ["arn:aws:secretsmanager", !Ref "AWS::Region", !Ref "AWS::AccountId", "secret", "jwt-rs256-??????"]]
+          # Allow server to send "recovery" email.
+          - Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource: "*"
+          # Allow mysqlQueryExecutor to optimize database access.
+          - Effect: Allow
+            Action:
+              - rds:DescribeDBClusters
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ecs:ListClusters
+              - ecs:ListTasks
+            Resource: "*"
+
+  # Create a place for logs to go.
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
+  # Resources we need for our Task to execute
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      # Use DependsOn here to insure the policy exists so it can be attached to the role.
+      - TaskPolicy
+    Properties:
+      # 256 is 25% of a 'vCPU', the smallest amount we can allocate.
+      Cpu: !If [IsProduction, 512, 256]
+      # 512MB is the smallest amount we can allocate.
+      # Size combinations https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html
+      Memory: !If [IsProduction, 1024, 512]
+      ExecutionRoleArn: !GetAtt TaskRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      # These next two properties are the only Fargate specific configuration in the TaskDefinition.
+      # It forces an 'awsvpc' network mode.
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Ref ProjectName
+          Cpu: !If [IsProduction, 512, 256]
+          Memory: !If [IsProduction, 1024, 512]
+          PortMappings:
+            - ContainerPort: 3000
+          Essential: true
+          Image: !Ref Image
+          LogConfiguration:
+            # Tell ECS to send log output to Cloudwatch. The prefix is required by Fargate.
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Ref ProjectName
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - TargetGroup
+      # - InternalTargetGroup
+      - AppSG
+      - TaskDefinition
+      - LBListener
+      - LBListenerHTTP
+    Properties:
+      Cluster: !Ref ECSCluster
+      LaunchType: FARGATE
+      # The number of instances we would like to run.
+      DesiredCount: !If [IsProduction, 2, 1]
+      TaskDefinition: !Ref TaskDefinition
+      LoadBalancers:
+        - ContainerName: !Ref ProjectName
+          ContainerPort: 3000
+          TargetGroupArn: !Ref TargetGroup
+        # - ContainerName: !Ref ProjectName
+        #   ContainerPort: 3000
+        #   TargetGroupArn: !Ref InternalTargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Select [ 0, !Ref SubnetIds ]
+            - !Select [ 1, !Ref SubnetIds ]
+            - !Select [ 2, !Ref SubnetIds ]
+            - !Select [ 3, !Ref SubnetIds ]
+          SecurityGroups:
+            - !Ref AppSG
+      # Optional
+      DeploymentConfiguration:
+        # Never allow less than this percentage of servers to be running during a deploy.
+        MinimumHealthyPercent: 100
+        # Allow six times the number of servers to be running during a deployment.
+        MaximumPercent: 600
+
+  # Whitelist traffic from the internet to the load balancer.
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref ProjectName
+      GroupDescription: Load balancer security group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          CidrIp: '0.0.0.0/0'
+          FromPort: 80
+          ToPort: 80
+        - IpProtocol: 'tcp'
+          CidrIp: '0.0.0.0/0'
+          FromPort: 443
+          ToPort: 443
+
+  # Security group on the inside for the application.
+  AppSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      #      GroupName: !Ref ProjectName
+      GroupDescription: Application security group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          SourceSecurityGroupId: !Ref LoadBalancerSG
+          FromPort: 1
+          ToPort: 65000
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn:
+      - LoadBalancerSG
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+        - !Select [ 1, !Ref SubnetIds ]
+        - !Select [ 3, !Ref SubnetIds ]
+        # - !Select [ 4, !Ref SubnetIds ]
+        # - !Select [ 5, !Ref SubnetIds ]
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '900'    # Maximum lambda function time.
+      SecurityGroups:
+        - !Ref LoadBalancerSG
+
+  # Port 443 Listener. Default rule is to forward to the Target Group
+  LBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - LoadBalancer
+      - TargetGroup
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref HTTPSCertificateArn
+
+  # Port 80 Listener. Default rule is to redirect to e.g. https://staging.psl-diligent.com or https://www.psl-diligent.com
+  LBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - LoadBalancer
+      - TargetGroup
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        # Forward HTTP traffic to HTTPS.
+        - Type: redirect
+          RedirectConfig:
+            Host: !Sub '#{host}'
+            Path: '/#{path}'
+            Port: 443
+            Protocol: HTTPS
+            Query: '#{query}'
+            StatusCode: 'HTTP_301'
+      LoadBalancerArn: !Ref LoadBalancer
+
+  # Listener rule. If we come in to "psl-diligent.com", this will redirect to https://www.psl-diligent.com.
+  # This takes precedence over the DefaultActions of LBListener.
+  # Only defined for Production.
+  LBListenerRedirect:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    DependsOn:
+      - LBListener
+    Condition: IsProduction
+    Properties:
+      Actions:
+        - Type: redirect
+          RedirectConfig:
+            Host: !Sub '${Subdomain}.#{host}'
+            Path: '/#{path}'
+            Port: 443
+            Protocol: HTTPS
+            Query: '#{query}'
+            StatusCode: 'HTTP_301'
+      Conditions:
+      - Field: host-header
+        Values:
+        - !Sub '${ApexDomain}'
+      ListenerArn: !Ref LBListener
+      Priority: 1
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn:
+      - LoadBalancer
+    Properties:
+      # Default is 'instance' but must use 'ip' to forward to fargate.`
+      TargetType: ip
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 3000
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 3000
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key:  deregistration_delay.timeout_seconds
+          Value:  30
+
+  #
+  # Lambdas
+  #
+
+  dsRunOncePerDayLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: dsRunOncePerDayLambdaRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: dsRunOncePerDayLambdaLoggingPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: arn:aws:logs:*:*:*
+        - PolicyName: dsRunOncePerDayLambdaSecretsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:*
+                Resource: "*"
+        - PolicyName: dsRunOncePerDayLambdaCloudWatchPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  # Must be created before lambda creates to be referenced by AWS::Logs::MetricFilter
+  # TODO: Will need to be done for other lambdas which are monitoried to have new project build.
+  dsRunOncePerDayLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+      LogGroupName: "/aws/lambda/dsRunOncePerDayLambdaFunction"
+
+  dsRunOncePerDayLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Sub 'lambdas/dsRunOncePerDayLambdaFunction${CodeBuildResolvedSourceVersion}.zip'
+      Handler: index.handler
+      FunctionName: dsRunOncePerDayLambdaFunction
+      Role: !GetAtt dsRunOncePerDayLambdaRole.Arn
+      ReservedConcurrentExecutions: 2
+      Runtime: nodejs12.x
+      Timeout: 10
+      MemorySize: 128
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref AppSG
+        SubnetIds:
+          - !Ref LambdaSubnet
+
+  dsRunOncePerDayRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "dsRunOncePerDayRule"
+      # Run once per day at 3 am UTC.
+      ScheduleExpression: "cron(0 3 * * ? *)"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt dsRunOncePerDayLambdaFunction.Arn
+          Id: dsRunOncePerDayLambdaFunction
+
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref dsRunOncePerDayLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt dsRunOncePerDayRule.Arn
+
+  #
+  # Queue
+  # The queue is created in the pipeline so buildspec can give ECS a reference.
+  #
+
+  #
+  # Users
+  #
+
+  OperationsGroup:
+    Type: AWS::IAM::Group
+    # Example how to get stack to update if a chane not detected by cloudformation deploy.
+    Metadata: {"force": Forcing stack to update."}
+    Properties: 
+      GroupName: operations
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  UserBradTest:
+    Type: AWS::IAM::User
+    Properties: 
+      UserName: bradTest
+      Groups: 
+        - !Ref OperationsGroup
+
+  # Chanegs in an AWS::Include will not be detected. Change the metadata of the AWS::IAM::Group resource above to
+  #  force the stack to update per the CloudFormation User Guide.
+  'Fn::Transform':
+    Name: 'AWS::Include'
+    Parameters:
+      Location : !Sub 's3://${CodeBucket}/cloudFormationIncludes/cloudWatch/webservices.cloudwatch.template.yml'
+
+Outputs:
+  LoadBalancerDNS:
+    Value: !GetAtt LoadBalancer.DNSName
+  LambdaEIP:
+    Value: !Ref LambdaEIP
+

@@ -21,7 +21,7 @@ APEX_DOMAIN='powerside.com'
 # Make sure ENTITY_NAME is lowercase!
 ENTITY_NAME='insite'
 REPO_OWNER=powerstandards
-REPO_TOKEN='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'
+REPO_TOKEN='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'
 
 # How to handle updates which are not recognized as changes. Lists types of changes not recognized.
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/troubleshooting.html

@@ -246,8 +246,8 @@ Resources:
       LoadBalancerArn: !Ref LoadBalancer
       Port: 25
       Protocol: TCP
-      Certificates:
-        - CertificateArn: !Ref HTTPSCertificateArn
+#      Certificates:
+#        - CertificateArn: !Ref HTTPSCertificateArn
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup

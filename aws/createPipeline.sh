@@ -3,15 +3,23 @@
 # Required parameter with profile name else exit.
 STAGE=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 REGION=$2
+REPO_TOKEN=$3
 
 if [ -z $STAGE ] || [ -z $REGION ] ; then
 	echo "ERROR: Must pass a stage name and a region as parameters.";
 	STAGE='-h';
 fi
 
+if [ -z REPO_TOKEN ] ; then
+  echo "ERROR: Must pass a valid repo token";
+  echo "For GitHub, the token should have no expiration date";
+  echo "and should have these capabilities: admin:repo_hook, repo, workflow";
+  STAGE='-h';
+fi
+
 if [ $STAGE = '-h' ] || [ $STAGE = '--help' ] ; then
-  echo "Usage: $0 [production | staging | development] region";
-  echo "E.g. $0 staging us-east-1";
+  echo "Usage: $0 [production | staging | development] region repoToken";
+  echo "E.g. $0 staging us-east-1 ghp_9AAAAaAAa9aAAAaAaAA99AaAaA9aAa9AaAa9";
 	exit 1;
 fi
 
@@ -21,7 +29,6 @@ APEX_DOMAIN='powerside.com'
 # Make sure ENTITY_NAME is lowercase!
 ENTITY_NAME='insite'
 REPO_OWNER=powerstandards
-REPO_TOKEN='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'
 
 # How to handle updates which are not recognized as changes. Lists types of changes not recognized.
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/troubleshooting.html

@@ -273,6 +273,3 @@ Resources:
 Outputs:
   LoadBalancerDNS:
     Value: !GetAtt LoadBalancer.DNSName
-  LambdaEIP:
-    Value: !Ref LambdaEIP
-

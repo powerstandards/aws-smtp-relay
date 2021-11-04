@@ -32,7 +32,7 @@ phases:
       - echo ${VPC_ID}
       - sed --in-place='bak' --expression="s|VPC_ID|${VPC_ID}|" aws/parameters/cloudformation.parameters.*.json
 
-      - SUBNET_IDS=$(aws ec2 describe-subnets | jq '.Subnets[].SubnetId' | grep '^"subnet-[a-fA-F0-9]\{8\}"$' | tr -d '\n' | sed -e 's/""/ /g' -e 's/"//g')
+      - SUBNET_IDS=$(aws ec2 describe-subnets | jq '.Subnets[].SubnetId' | grep '^"subnet-[a-fA-F0-9]\{8\}"$' | tr -d '\n' | sed -e 's/""/, /g' -e 's/"//g')
       - echo SUBNET_IDS
       - sed --in-place='bak' --expression="s|SUBNET_IDS|${SUBNET_IDS}|" aws/parameters/cloudformation.parameters.*.json
 

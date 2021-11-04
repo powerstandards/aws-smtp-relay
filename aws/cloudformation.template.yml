@@ -259,13 +259,6 @@ Resources:
       VpcId: !Ref VpcId
       Protocol: TCP
       Port: 25
-      HealthCheckPath: /health
-      HealthCheckIntervalSeconds: 10
-      HealthCheckTimeoutSeconds: 5
-      HealthCheckProtocol: HTTP
-      HealthCheckPort: 3000
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 2
       TargetGroupAttributes:
         - Key:  deregistration_delay.timeout_seconds
           Value:  30

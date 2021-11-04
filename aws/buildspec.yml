@@ -12,14 +12,12 @@ phases:
     runtime-versions:
       # Available settings https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-available.html
       docker: 18
-      # ECS Task using: FROM node:10-alpine
-      nodejs: 12
+
     commands:
       # Available Environment Variables:
       #  https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
       - printenv | sort
-      - apt-get update -y
-      - apt-get install -y maven
+      - yum -y install maven
 
   pre_build:
     commands:

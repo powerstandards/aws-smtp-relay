@@ -159,7 +159,6 @@ Resources:
       - AppSG
       - TaskDefinition
       - LBListener
-      - LBListenerHTTP
     Properties:
       Cluster: !Ref ECSCluster
       LaunchType: FARGATE

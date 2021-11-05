@@ -161,7 +161,7 @@ Resources:
       - LBListener
     Properties:
       Cluster: !Ref ECSCluster
-      LaunchType: FARGATE
+#      LaunchType: FARGATE
       # The number of instances we would like to run.
       DesiredCount: !If [IsProduction, 2, 1]
       TaskDefinition: !Ref TaskDefinition

@@ -130,11 +130,11 @@ Resources:
       Memory: !If [IsProduction, 1024, 512]
       ExecutionRoleArn: !GetAtt TaskRole.Arn
       TaskRoleArn: !GetAtt TaskRole.Arn
-      # These next two properties are the only Fargate specific configuration in the TaskDefinition.
-      # It forces an 'awsvpc' network mode.
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
+#      # These next two properties are the only Fargate specific configuration in the TaskDefinition.
+#      # It forces an 'awsvpc' network mode.
+#      NetworkMode: awsvpc
+#      RequiresCompatibilities:
+#        - FARGATE
       ContainerDefinitions:
         - Name: !Ref ProjectName
           Cpu: !If [IsProduction, 512, 256]
@@ -255,7 +255,7 @@ Resources:
     DependsOn:
       - LoadBalancer
     Properties:
-      # Default is 'instance' but must use 'ip' to forward to fargate.`
+#      # Default is 'instance' but must use 'ip' to forward to fargate.`
 #      TargetType: ip
       VpcId: !Ref VpcId
       Protocol: TCP

@@ -218,8 +218,8 @@ Resources:
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    DependsOn:
-      - LoadBalancerSG
+#    DependsOn:
+#      - LoadBalancerSG
     Properties:
       Scheme: internet-facing
       Subnets:
@@ -230,8 +230,8 @@ Resources:
       LoadBalancerAttributes:
         - Key: idle_timeout.timeout_seconds
           Value: '900'    # Maximum lambda function time.
-      SecurityGroups:
-        - !Ref LoadBalancerSG
+#      SecurityGroups:
+#        - !Ref LoadBalancerSG
       Type: network
 
   # Port 443 Listener. Default rule is to forward to the Target Group

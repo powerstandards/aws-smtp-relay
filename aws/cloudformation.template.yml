@@ -227,9 +227,9 @@ Resources:
         - !Select [ 3, !Ref SubnetIds ]
         # - !Select [ 4, !Ref SubnetIds ]
         # - !Select [ 5, !Ref SubnetIds ]
-      LoadBalancerAttributes:
-        - Key: idle_timeout.timeout_seconds
-          Value: '900'    # Maximum lambda function time.
+#      LoadBalancerAttributes:
+#        - Key: idle_timeout.timeout_seconds
+#          Value: '900'    # Maximum lambda function time.
 #      SecurityGroups:
 #        - !Ref LoadBalancerSG
       Type: network

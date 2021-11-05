@@ -255,7 +255,7 @@ Resources:
       - LoadBalancer
     Properties:
       # Default is 'instance' but must use 'ip' to forward to fargate.`
-      TargetType: ip
+#      TargetType: ip
       VpcId: !Ref VpcId
       Protocol: TCP
       Port: 25

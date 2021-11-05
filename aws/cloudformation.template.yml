@@ -232,6 +232,7 @@ Resources:
           Value: '900'    # Maximum lambda function time.
       SecurityGroups:
         - !Ref LoadBalancerSG
+      Type: network
 
   # Port 443 Listener. Default rule is to forward to the Target Group
   LBListener:

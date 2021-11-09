@@ -170,16 +170,16 @@ Resources:
         - ContainerName: !Ref ProjectName
           ContainerPort: 10025
           TargetGroupArn: !Ref TargetGroup
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          Subnets:
-            - !Select [ 0, !Ref SubnetIds ]
-            - !Select [ 1, !Ref SubnetIds ]
-            - !Select [ 2, !Ref SubnetIds ]
-            - !Select [ 3, !Ref SubnetIds ]
-          SecurityGroups:
-            - !Ref AppSG
+#      NetworkConfiguration:
+#        AwsvpcConfiguration:
+#          AssignPublicIp: ENABLED
+#          Subnets:
+#            - !Select [ 0, !Ref SubnetIds ]
+#            - !Select [ 1, !Ref SubnetIds ]
+#            - !Select [ 2, !Ref SubnetIds ]
+#            - !Select [ 3, !Ref SubnetIds ]
+#          SecurityGroups:
+#            - !Ref AppSG
       # Optional
       DeploymentConfiguration:
         # Never allow less than this percentage of servers to be running during a deploy.

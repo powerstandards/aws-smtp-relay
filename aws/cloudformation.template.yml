@@ -130,6 +130,7 @@ Resources:
       Memory: !If [IsProduction, 1024, 512]
       ExecutionRoleArn: !GetAtt TaskRole.Arn
       TaskRoleArn: !GetAtt TaskRole.Arn
+      NetworkMode: bridge
 #      # These next two properties are the only Fargate specific configuration in the TaskDefinition.
 #      # It forces an 'awsvpc' network mode.
 #      NetworkMode: awsvpc

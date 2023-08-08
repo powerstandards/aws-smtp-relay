@@ -36,18 +36,23 @@ public class SesSmtpRelay extends SmtpRelay {
     RawMessage rawMessage = new RawMessage(ByteBuffer.wrap(msg));
     SendRawEmailRequest rawEmailRequest = new SendRawEmailRequest(rawMessage).withSource(from).withDestinations(to);
     if (deliveryDetails.hasSourceArn()) {
+      LOG.info("source ARN: {}", deliveryDetails.getSourceArn());
       rawEmailRequest = rawEmailRequest.withSourceArn(deliveryDetails.getSourceArn());
     }
     if (deliveryDetails.hasFromArn()) {
+      LOG.info("From ARN: {}", deliveryDetails.getFromArn());
       rawEmailRequest = rawEmailRequest.withFromArn(deliveryDetails.getFromArn());
     }
     if (deliveryDetails.hasReturnPathArn()) {
+      LOG.info("Return Path ARN: {}", deliveryDetails.getReturnPathArn());
       rawEmailRequest = rawEmailRequest.withReturnPathArn(deliveryDetails.getReturnPathArn());
     }
     if (deliveryDetails.hasConfiguration()) {
+      LOG.info("configurations: {}", deliveryDetails.getConfiguration());
       rawEmailRequest = rawEmailRequest.withConfigurationSetName(deliveryDetails.getConfiguration());
     }
     try {
+      LOG.info("raw email object: {}", rawEmailRequest.toString());
       client.sendRawEmail(rawEmailRequest);
     } catch (AmazonSimpleEmailServiceException e) {
       throw new IOException(e.getMessage(), e);

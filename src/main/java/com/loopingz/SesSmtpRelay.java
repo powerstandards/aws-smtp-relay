@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.invoke.MethodHandles;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
 
@@ -34,6 +35,9 @@ public class SesSmtpRelay extends SmtpRelay {
     }
     byte[] msg = IOUtils.toByteArray(inputStream);
     RawMessage rawMessage = new RawMessage(ByteBuffer.wrap(msg));
+
+    String parsedStr = new String(msg, StandardCharsets.UTF_8).replaceAll("(.{100})", "$1\n");
+    LOG.info("Raw Message: {}", parsedStr);
     SendRawEmailRequest rawEmailRequest = new SendRawEmailRequest(rawMessage).withSource(from).withDestinations(to);
     if (deliveryDetails.hasSourceArn()) {
       LOG.info("source ARN: {}", deliveryDetails.getSourceArn());

@@ -1,12 +1,14 @@
 # aws-smtp-relay
 
+[DEPRECATED] I moved to this project instead: https://github.com/loopingz/smtp-relay
+It should have similar features with more flexibility, please create issue on the new project
+
 ![logo](https://raw.githubusercontent.com/loopingz/aws-smtp-relay/master/docs/aws-smtp-relay-logo.png)
 
-Current master: 
+Current main: 
 
-Circle CI: [![CircleCI](https://circleci.com/gh/loopingz/aws-smtp-relay.svg?style=svg)](https://circleci.com/gh/loopingz/aws-smtp-relay)
-
-Travis CI: [![TravisCI](https://travis-ci.org/loopingz/aws-smtp-relay.svg?branch=master)](https://travis-ci.org/github/loopingz/aws-smtp-relay)
+[![CodeQL](https://github.com/loopingz/aws-smtp-relay/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/loopingz/aws-smtp-relay/actions/workflows/codeql-analysis.yml)
+[![CI](https://github.com/loopingz/aws-smtp-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/loopingz/aws-smtp-relay/actions/workflows/ci.yml)
 
 Local SMTP server that convert SMTP message to AWS SES API Call to allow you to use **AWS Role Instance**.
 

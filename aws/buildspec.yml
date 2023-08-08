@@ -1,0 +1,69 @@
+version: 0.2
+
+env:
+  variables: {}
+  # https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html#secrets-manager-build-spec
+  secrets-manager:
+    DOCKER_HUB_ID: docker-account:docker-id
+    DOCKER_HUB_PASSWORD: docker-account:password
+
+phases:
+  install:
+    runtime-versions:
+      # Available settings https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-available.html
+      docker: 18
+
+    commands:
+      # Available Environment Variables:
+      #  https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
+      - printenv | sort
+
+  pre_build:
+    commands:
+      - export RELEASE_IMAGE_URL="$DOCKER_IMAGE_URL:$CODEBUILD_RESOLVED_SOURCE_VERSION"
+
+      # login docker hub account
+      - docker login -u "${DOCKER_HUB_ID}" -p "${DOCKER_HUB_PASSWORD}"
+
+  build:
+    commands:
+      # Obtain the VPC dynamically. Assume there is only one VPC.
+      - VPC_ID=$(aws ec2 describe-vpcs | jq '.Vpcs[0].VpcId' | tr -d '\n' | sed -e 's/"//g')
+      - echo ${VPC_ID}
+      - sed --in-place='bak' --expression="s|VPC_ID|${VPC_ID}|" aws/parameters/cloudformation.parameters.*.json
+
+      - SUBNET_IDS=$(aws ec2 describe-subnets | jq '.Subnets[].SubnetId' | grep '^"subnet-[a-fA-F0-9]\{8\}"$' | tr -d '\n' | sed -e 's/""/, /g' -e 's/"//g')
+      - echo SUBNET_IDS
+      - sed --in-place='bak' --expression="s|SUBNET_IDS|${SUBNET_IDS}|" aws/parameters/cloudformation.parameters.*.json
+
+      # Put the URL to the released image into the parameter file so it is available to the deploy stage to invoke.
+      - sed --in-place='bak' --expression="s|ENTITY_NAME|${ENTITY_NAME}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|PROJECT_NAME|${PROJECT_NAME}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|DEVELOPMENT_STAGE|${DEVELOPMENT_STAGE}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|RELEASE_IMAGE_URL|${RELEASE_IMAGE_URL}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|SUBDOMAIN|${SUBDOMAIN}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|APEX_DOMAIN|${APEX_DOMAIN}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|DATA_BUCKET|${DATA_BUCKET}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|CODE_BUCKET|${CODE_BUCKET}|" aws/parameters/cloudformation.parameters.*.json
+      - sed --in-place='bak' --expression="s|CODEBUILD_RESOLVED_SOURCE_VERSION|${CODEBUILD_RESOLVED_SOURCE_VERSION}|" aws/parameters/cloudformation.parameters.*.json
+
+      - cat aws/parameters/cloudformation.parameters.${DEVELOPMENT_STAGE}.json
+
+      # Build the docker image.
+      - cd $CODEBUILD_SRC_DIR
+
+      # Install here rather than in pre-build because it is extremely verbose, and we want to more easily see the JSON printed out above.
+      - yum -y install maven
+      - mvn clean compile assembly:single -Pquickrun
+
+      - docker build --tag "$RELEASE_IMAGE_URL" --file ./Dockerfile .
+
+      # Login to the ECR Container Registry and push up the image.
+      - $(aws ecr get-login --no-include-email)
+      - docker push --all-tags "$DOCKER_IMAGE_URL"
+
+artifacts:
+  discard-paths: yes
+  files:
+    - 'aws/cloudformation.template.yml'
+    - 'aws/parameters/*'

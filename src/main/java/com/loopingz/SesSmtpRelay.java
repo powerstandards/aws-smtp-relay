@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.invoke.MethodHandles;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
 
@@ -33,10 +34,10 @@ public class SesSmtpRelay extends SmtpRelay {
       client = AmazonSimpleEmailServiceClientBuilder.standard().build();
     }
     byte[] msg = IOUtils.toByteArray(inputStream);
-    String parsedStr = new String(msg);
+    String parsedStr = new String(msg, StandardCharsets.UTF_8);
     String result = parsedStr.replace("Cc: ,", "");
     LOG.info("Raw Message: {}", result);
-    byte[] msgTruncated = result.getBytes();
+    byte[] msgTruncated = result.getBytes(StandardCharsets.UTF_8);
     RawMessage rawMessage = new RawMessage(ByteBuffer.wrap(msgTruncated));
     SendRawEmailRequest rawEmailRequest = new SendRawEmailRequest(rawMessage).withSource(from).withDestinations(to);
     if (deliveryDetails.hasSourceArn()) {

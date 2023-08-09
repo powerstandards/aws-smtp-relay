@@ -38,7 +38,6 @@ public class SesSmtpRelay extends SmtpRelay {
 
     String parsedStr = new String(msg, StandardCharsets.UTF_8);
     parsedStr.replace("Cc: ,", "");
-    
     LOG.info("Raw Message: {}", parsedStr);
     SendRawEmailRequest rawEmailRequest = new SendRawEmailRequest(rawMessage).withSource(from).withDestinations(to);
     if (deliveryDetails.hasSourceArn()) {

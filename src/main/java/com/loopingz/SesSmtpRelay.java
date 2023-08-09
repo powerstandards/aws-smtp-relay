@@ -35,7 +35,7 @@ public class SesSmtpRelay extends SmtpRelay {
     }
     byte[] msg = IOUtils.toByteArray(inputStream);
     String parsedStr = new String(msg, StandardCharsets.UTF_8);
-    String result = parsedStr.replace("Cc: ,", "");
+    String result = parsedStr.replace("Cc: ,\n", "");
     LOG.info("Raw Message: {}", result);
     byte[] msgTruncated = result.getBytes(StandardCharsets.UTF_8);
     RawMessage rawMessage = new RawMessage(ByteBuffer.wrap(msgTruncated));

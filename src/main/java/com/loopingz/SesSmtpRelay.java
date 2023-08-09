@@ -33,11 +33,11 @@ public class SesSmtpRelay extends SmtpRelay {
       client = AmazonSimpleEmailServiceClientBuilder.standard().build();
     }
     byte[] msg = IOUtils.toByteArray(inputStream);
-    RawMessage rawMessage = new RawMessage(ByteBuffer.wrap(msg));
-
     String parsedStr = new String(msg);
-    parsedStr.replace("Cc: ,", "");
-    LOG.info("Raw Message: {}", parsedStr);
+    String result = parsedStr.replace("Cc: ,", "");
+    LOG.info("Raw Message: {}", result);
+    byte[] msgTruncated = result.getBytes();
+    RawMessage rawMessage = new RawMessage(ByteBuffer.wrap(msgTruncated));
     SendRawEmailRequest rawEmailRequest = new SendRawEmailRequest(rawMessage).withSource(from).withDestinations(to);
     if (deliveryDetails.hasSourceArn()) {
       LOG.info("source ARN: {}", deliveryDetails.getSourceArn());
